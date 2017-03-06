@@ -44,6 +44,8 @@ static struct pwm_lookup crc_pwm_lookup[] = {
 	PWM_LOOKUP("crystal_cove_pwm", 0, "0000:00:02.0", "pwm_backlight", 0, PWM_POLARITY_NORMAL),
 };
 
+static struct intel_soc_pmic *pmic_hack = NULL;
+
 static int intel_soc_pmic_find_gpio_irq(struct device *dev)
 {
 	struct gpio_desc *desc;
@@ -77,6 +79,7 @@ static int intel_soc_pmic_i2c_probe(struct i2c_client *i2c,
 	config = (struct intel_soc_pmic_config *)id->driver_data;
 
 	pmic = devm_kzalloc(dev, sizeof(*pmic), GFP_KERNEL);
+	pmic_hack = pmic;
 	if (!pmic)
 		return -ENOMEM;
 
@@ -167,6 +170,38 @@ static int intel_soc_pmic_resume(struct device *dev)
 	return 0;
 }
 #endif
+
+int intel_soc_pmic_readb(int reg)
+{
+	int ret;
+	unsigned int val;
+
+	if (!pmic_hack) {
+		ret = -EIO;
+	} else {
+		ret = regmap_read(pmic_hack->regmap, reg, &val);
+		if (!ret) {
+			ret = val;
+		}
+	}
+
+	return ret;
+}
+EXPORT_SYMBOL(intel_soc_pmic_readb);
+
+int intel_soc_pmic_writeb(int reg, u8 val)
+{
+	int ret;
+
+	if (!pmic_hack) {
+		ret = -EIO;
+	} else {
+		ret = regmap_write(pmic_hack->regmap, reg, val);
+	}
+	return ret;
+}
+EXPORT_SYMBOL(intel_soc_pmic_writeb);
+
 
 static SIMPLE_DEV_PM_OPS(intel_soc_pmic_pm_ops, intel_soc_pmic_suspend,
 			 intel_soc_pmic_resume);

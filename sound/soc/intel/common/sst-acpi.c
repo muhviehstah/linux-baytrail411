@@ -229,7 +229,7 @@ static struct sst_acpi_desc sst_acpi_baytrail_desc = {
 	.resindex_lpe_base = 0,
 	.resindex_pcicfg_base = 1,
 	.resindex_fw_base = 2,
-	.irqindex_host_ipc = 5,
+	.irqindex_host_ipc = 0,
 	.sst_id = SST_DEV_ID_BYT,
 	.resindex_dma_base = -1,
 };

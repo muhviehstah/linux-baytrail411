@@ -179,10 +179,15 @@ static int acpi_register_lapic(int id, u32 acpiid, u8 enabled)
 		return -EINVAL;
 	}
 
+	if (!enabled) {
+		++disabled_cpus;
+		return -EINVAL;
+	}
+
 	if (boot_cpu_physical_apicid != -1U)
 		ver = boot_cpu_apic_version;
 
-	cpu = __generic_processor_info(id, ver, enabled);
+	cpu = generic_processor_info(id, ver);
 	if (cpu >= 0)
 		early_per_cpu(x86_cpu_to_acpiid, cpu) = acpiid;
 
@@ -428,12 +433,8 @@ acpi_parse_ioapic(struct acpi_subtable_header * header, const unsigned long end)
 
 	acpi_table_print_madt_entry(header);
 
-	/*
-	 * Statically assign IRQ numbers for IOAPICs hosting legacy IRQs,
-	 * Or for the platform in Hardware-reduced ACPI model
-	 */
-	if (ioapic->global_irq_base < nr_legacy_irqs() ||
-		acpi_gbl_reduced_hardware)
+	/* Statically assign IRQ numbers for IOAPICs hosting legacy IRQs */
+	if (ioapic->global_irq_base < nr_legacy_irqs())
 		cfg.type = IOAPIC_DOMAIN_LEGACY;
 
 	mp_register_ioapic(ioapic->id, ioapic->address, ioapic->global_irq_base,
@@ -714,7 +715,7 @@ static void __init acpi_set_irq_model_ioapic(void)
 #ifdef CONFIG_ACPI_HOTPLUG_CPU
 #include <acpi/processor.h>
 
-int acpi_map_cpu2node(acpi_handle handle, int cpu, int physid)
+static int acpi_map_cpu2node(acpi_handle handle, int cpu, int physid)
 {
 #ifdef CONFIG_ACPI_NUMA
 	int nid;

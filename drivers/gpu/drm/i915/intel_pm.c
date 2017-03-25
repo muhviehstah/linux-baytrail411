@@ -4906,6 +4906,13 @@ static void gen6_set_rps_thresholds(struct drm_i915_private *dev_priv, u8 val)
 	if (IS_VALLEYVIEW(dev_priv))
 		goto skip_hw_write;
 
+	if (IS_VALLEYVIEW(dev_priv)) {
+		ei_up = 64000;
+		ei_down = 64000;
+		threshold_up = 90;
+		threshold_down = 70;
+	}
+
 	I915_WRITE(GEN6_RP_UP_EI,
 		   GT_INTERVAL_FROM_US(dev_priv, ei_up));
 	I915_WRITE(GEN6_RP_UP_THRESHOLD,

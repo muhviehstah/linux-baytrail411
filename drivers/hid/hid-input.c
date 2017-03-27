@@ -991,18 +991,6 @@ static void hidinput_configure_usage(struct hid_input *hidinput, struct hid_fiel
 		}
 		break;
 
-	case HID_UP_ASUSVENDOR:
-		switch (usage->hid & HID_USAGE) {
-		case 0x06C: map_key_clear(KEY_SLEEP);           break; /* Fn+F1: Sleep */
-		case 0x088: map_key_clear(KEY_WLAN);            break; /* Fn+F2: Wifi & BT */
-		case 0x010: map_key_clear(KEY_BRIGHTNESSDOWN);  break; /* Fn+F5: Brightness down */
-		case 0x020: map_key_clear(KEY_BRIGHTNESSUP);    break; /* Fn+F6: Brightness up */
-		//case 0x0ff: map_key_clear(KEY_SWITCHVIDEOMODE); break; /* Fn+F8: Switch Video Mode -- FIXME: 0xff doesn't work*/
-		case 0x06B: map_key_clear(KEY_TOUCHPAD_TOGGLE); break; /* Fn+F9: Toggle Touchpad on/off*/
-		default: goto ignore;
-		}
-		break;
-
 	default:
 	unknown:
 		if (field->report_size == 1) {

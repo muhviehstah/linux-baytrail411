@@ -36,7 +36,6 @@
 #include <linux/pm.h>
 #include <linux/pm_runtime.h>
 #include <linux/delay.h>
-#include <linux/dmi.h>
 
 #include <linux/mmc/host.h>
 #include <linux/mmc/pm.h>
@@ -49,24 +48,6 @@
 #endif
 
 #include "sdhci.h"
-
-#ifdef CONFIG_X86
-#include <asm/cpu_device_id.h>
-static bool sdhci_acpi_on_byt(void)
-{
-	static const struct x86_cpu_id byt[] = {
-		{ X86_VENDOR_INTEL, 6, 0x37 },
-		{}
-	};
-
-	return x86_match_cpu(byt);
-}
-#else
-static bool sdhci_acpi_on_byt(void)
-{
-	return false;
-}
-#endif
 
 enum {
 	SDHCI_ACPI_SD_CD		= BIT(0),
@@ -100,16 +81,6 @@ struct sdhci_acpi_host {
 	const struct sdhci_acpi_slot	*slot;
 	struct platform_device		*pdev;
 	bool				use_runtime_pm;
-};
-
-static const struct dmi_system_id disable_rpm[] __initconst = {
-	{
-		.matches = {
-			DMI_MATCH(DMI_SYS_VENDOR, "ThinGlobal LLC"),
-			DMI_MATCH(DMI_PRODUCT_NAME, "Ultra MiniPC TG1"),
-		},
-	},
-	{}
 };
 
 static inline bool sdhci_acpi_flag(struct sdhci_acpi_host *c, unsigned int flag)
@@ -242,14 +213,6 @@ out:
 	return ret;
 }
 
-static void sdhci_acpi_int_dma_latency(struct sdhci_host *host)
-{
-	if (sdhci_acpi_on_byt()) {
-		host->dma_latency = 20;
-		host->lat_cancel_delay = 275;
-	}
-}
-
 static int sdhci_acpi_emmc_probe_slot(struct platform_device *pdev,
 				      const char *hid, const char *uid)
 {
@@ -268,8 +231,6 @@ static int sdhci_acpi_emmc_probe_slot(struct platform_device *pdev,
 	    sdhci_readl(host, SDHCI_CAPABILITIES_1) == 0x00000807)
 		host->timeout_clk = 1000; /* 1000 kHz i.e. 1 MHz */
 
-	sdhci_acpi_int_dma_latency(host);
-
 	return 0;
 }
 
@@ -283,8 +244,6 @@ static int sdhci_acpi_sdio_probe_slot(struct platform_device *pdev,
 		return 0;
 
 	host = c->host;
-
-	sdhci_acpi_int_dma_latency(host);
 
 	/* Platform specific code during sdio probe slot goes here */
 
@@ -301,8 +260,6 @@ static int sdhci_acpi_sd_probe_slot(struct platform_device *pdev,
 		return 0;
 
 	host = c->host;
-
-	sdhci_acpi_int_dma_latency(host);
 
 	/* Platform specific code during sd probe slot goes here */
 
@@ -517,11 +474,6 @@ static int sdhci_acpi_probe(struct platform_device *pdev)
 			dev_warn(dev, "failed to setup card detect gpio\n");
 			c->use_runtime_pm = false;
 		}
-	}
-
-	if (dmi_check_system(disable_rpm)) {
-		dev_dbg(dev, "disabling runtime pm on this machine\n");
-		c->use_runtime_pm = false;
 	}
 
 	err = sdhci_add_host(host);

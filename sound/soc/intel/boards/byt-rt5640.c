@@ -119,22 +119,6 @@ static const struct dmi_system_id byt_rt5640_quirk_table[] = {
 	{
 		.callback = byt_rt5640_quirk_cb,
 		.matches = {
-			DMI_MATCH(DMI_SYS_VENDOR, "ASUSTeK COMPUTER INC."),
-			DMI_MATCH(DMI_PRODUCT_NAME, "T100TAF"),
-		},
-		.driver_data = (unsigned long *)BYT_RT5640_IN1_MAP,
-	},
-	{
-		.callback = byt_rt5640_quirk_cb,
-		.matches = {
-			DMI_MATCH(DMI_SYS_VENDOR, "ASUSTeK COMPUTER INC."),
-			DMI_MATCH(DMI_PRODUCT_NAME, "T100TAF"),
-		},
-		.driver_data = (unsigned long *)BYT_RT5640_IN1_MAP,
-	},
-	{
-		.callback = byt_rt5640_quirk_cb,
-		.matches = {
 			DMI_MATCH(DMI_SYS_VENDOR, "DellInc."),
 			DMI_MATCH(DMI_PRODUCT_NAME, "Venue 8 Pro 5830"),
 		},

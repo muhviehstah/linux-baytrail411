@@ -54,6 +54,8 @@
 
 static DEFINE_MUTEX(mce_chrdev_read_mutex);
 
+static int mce_chrdev_open_count;	/* #times opened */
+
 #define mce_log_get_idx_check(p) \
 ({ \
 	RCU_LOCKDEP_WARN(!rcu_read_lock_sched_held() && \
@@ -121,7 +123,7 @@ static void (*quirk_no_way_out)(int bank, struct mce *m, struct pt_regs *regs);
  * CPU/chipset specific EDAC code can register a notifier call here to print
  * MCE errors in a human-readable form.
  */
-ATOMIC_NOTIFIER_HEAD(x86_mce_decoder_chain);
+BLOCKING_NOTIFIER_HEAD(x86_mce_decoder_chain);
 
 /* Do initial initialization of a struct mce */
 void mce_setup(struct mce *m)
@@ -218,7 +220,7 @@ void mce_register_decode_chain(struct notifier_block *nb)
 
 	WARN_ON(nb->priority > MCE_PRIO_LOWEST && nb->priority < MCE_PRIO_EDAC);
 
-	atomic_notifier_chain_register(&x86_mce_decoder_chain, nb);
+	blocking_notifier_chain_register(&x86_mce_decoder_chain, nb);
 }
 EXPORT_SYMBOL_GPL(mce_register_decode_chain);
 
@@ -226,7 +228,7 @@ void mce_unregister_decode_chain(struct notifier_block *nb)
 {
 	atomic_dec(&num_notifiers);
 
-	atomic_notifier_chain_unregister(&x86_mce_decoder_chain, nb);
+	blocking_notifier_chain_unregister(&x86_mce_decoder_chain, nb);
 }
 EXPORT_SYMBOL_GPL(mce_unregister_decode_chain);
 
@@ -319,18 +321,7 @@ static void __print_mce(struct mce *m)
 
 static void print_mce(struct mce *m)
 {
-	int ret = 0;
-
 	__print_mce(m);
-
-	/*
-	 * Print out human-readable details about the MCE error,
-	 * (if the CPU has an implementation for that)
-	 */
-	ret = atomic_notifier_call_chain(&x86_mce_decoder_chain, 0, m);
-	if (ret == NOTIFY_STOP)
-		return;
-
 	pr_emerg_ratelimited(HW_ERR "Run the above through 'mcelog --ascii'\n");
 }
 
@@ -598,6 +589,10 @@ static int mce_default_notifier(struct notifier_block *nb, unsigned long val,
 	if (atomic_read(&num_notifiers) > 2)
 		return NOTIFY_DONE;
 
+	/* Don't print when mcelog is running */
+	if (mce_chrdev_open_count > 0)
+		return NOTIFY_DONE;
+
 	__print_mce(m);
 
 	return NOTIFY_DONE;
@@ -648,16 +643,14 @@ static void mce_read_aux(struct mce *m, int i)
 	}
 }
 
-static bool memory_error(struct mce *m)
+bool mce_is_memory_error(struct mce *m)
 {
-	struct cpuinfo_x86 *c = &boot_cpu_data;
-
-	if (c->x86_vendor == X86_VENDOR_AMD) {
+	if (m->cpuvendor == X86_VENDOR_AMD) {
 		/* ErrCodeExt[20:16] */
 		u8 xec = (m->status >> 16) & 0x1f;
 
 		return (xec == 0x0 || xec == 0x8);
-	} else if (c->x86_vendor == X86_VENDOR_INTEL) {
+	} else if (m->cpuvendor == X86_VENDOR_INTEL) {
 		/*
 		 * Intel SDM Volume 3B - 15.9.2 Compound Error Codes
 		 *
@@ -678,6 +671,7 @@ static bool memory_error(struct mce *m)
 
 	return false;
 }
+EXPORT_SYMBOL_GPL(mce_is_memory_error);
 
 DEFINE_PER_CPU(unsigned, mce_poll_count);
 
@@ -739,7 +733,7 @@ bool machine_check_poll(enum mcp_flags flags, mce_banks_t *b)
 
 		severity = mce_severity(&m, mca_cfg.tolerant, NULL, false);
 
-		if (severity == MCE_DEFERRED_SEVERITY && memory_error(&m))
+		if (severity == MCE_DEFERRED_SEVERITY && mce_is_memory_error(&m))
 			if (m.status & MCI_STATUS_ADDRV)
 				m.severity = severity;
 
@@ -1828,7 +1822,6 @@ void mcheck_cpu_clear(struct cpuinfo_x86 *c)
  */
 
 static DEFINE_SPINLOCK(mce_chrdev_state_lock);
-static int mce_chrdev_open_count;	/* #times opened */
 static int mce_chrdev_open_exclu;	/* already open exclusive? */
 
 static int mce_chrdev_open(struct inode *inode, struct file *file)

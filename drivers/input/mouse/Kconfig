@@ -205,21 +205,6 @@ config MOUSE_APPLETOUCH
 	  To compile this driver as a module, choose M here: the
 	  module will be called appletouch.
 
-config MOUSE_ASUSTOUCH
-	tristate "ASUS T100-family multitouch touchpad support"
-	depends on USB_ARCH_HAS_HCD
-	select USB
-	help
-	  Say Y here if you have an Asus T100 family computer and want
-	  multitouch support for your touchpad.
-	  Currently supported:
-
-	  ASUS T100TA
-	  ASUS T100HA
-
-	  To compile this driver as a module, choose M here: the
-	  module will be called asustouch.
-
 config MOUSE_BCM5974
 	tristate "Apple USB BCM5974 Multitouch trackpad support"
 	depends on USB_ARCH_HAS_HCD

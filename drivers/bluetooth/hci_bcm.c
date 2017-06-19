@@ -287,6 +287,9 @@ static int bcm_open(struct hci_uart *hu)
 
 	hu->priv = bcm;
 
+	if (!hu->tty->dev)
+		goto out;
+
 	mutex_lock(&bcm_device_lock);
 	list_for_each(p, &bcm_device_list) {
 		struct bcm_device *dev = list_entry(p, struct bcm_device, list);
@@ -307,7 +310,7 @@ static int bcm_open(struct hci_uart *hu)
 	}
 
 	mutex_unlock(&bcm_device_lock);
-
+out:
 	return 0;
 }
 
@@ -852,7 +855,6 @@ static const struct acpi_device_id bcm_acpi_match[] = {
 	{ "BCM2E65", (kernel_ulong_t)&acpi_bcm_int_last_gpios },
 	{ "BCM2E67", (kernel_ulong_t)&acpi_bcm_int_last_gpios },
 	{ "BCM2E71", (kernel_ulong_t)&acpi_bcm_int_last_gpios },
-	{ "BCM2E72", (kernel_ulong_t)&acpi_bcm_int_last_gpios },
 	{ "BCM2E7B", (kernel_ulong_t)&acpi_bcm_int_last_gpios },
 	{ "BCM2E7C", (kernel_ulong_t)&acpi_bcm_int_last_gpios },
 	{ "BCM2E95", (kernel_ulong_t)&acpi_bcm_int_first_gpios },

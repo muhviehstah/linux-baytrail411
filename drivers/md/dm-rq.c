@@ -280,7 +280,7 @@ static void dm_requeue_original_request(struct dm_rq_target_io *tio, bool delay_
 	if (!rq->q->mq_ops)
 		dm_old_requeue_request(rq);
 	else
-		dm_mq_delay_requeue_request(rq, delay_requeue ? 5000 : 0);
+		dm_mq_delay_requeue_request(rq, delay_requeue ? 100/*ms*/ : 0);
 
 	rq_completed(md, rw, false);
 }
@@ -755,6 +755,7 @@ static int dm_mq_queue_rq(struct blk_mq_hw_ctx *hctx,
 		/* Undo dm_start_request() before requeuing */
 		rq_end_stats(md, rq);
 		rq_completed(md, rq_data_dir(rq), false);
+		blk_mq_delay_run_hw_queue(hctx, 100/*ms*/);
 		return BLK_MQ_RQ_QUEUE_BUSY;
 	}
 
@@ -809,10 +810,14 @@ int dm_mq_init_request_queue(struct mapped_device *md, struct dm_table *t)
 	dm_init_md_queue(md);
 
 	/* backfill 'mq' sysfs registration normally done in blk_register_queue */
-	blk_mq_register_dev(disk_to_dev(md->disk), q);
+	err = blk_mq_register_dev(disk_to_dev(md->disk), q);
+	if (err)
+		goto out_cleanup_queue;
 
 	return 0;
 
+out_cleanup_queue:
+	blk_cleanup_queue(q);
 out_tag_set:
 	blk_mq_free_tag_set(md->tag_set);
 out_kfree_tag_set:

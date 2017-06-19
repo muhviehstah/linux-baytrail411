@@ -1043,7 +1043,7 @@ static struct inet_protosw inetsw_array[] =
 		.type =       SOCK_DGRAM,
 		.protocol =   IPPROTO_ICMP,
 		.prot =       &ping_prot,
-		.ops =        &inet_dgram_ops,
+		.ops =        &inet_sockraw_ops,
 		.flags =      INET_PROTOSW_REUSE,
        },
 
@@ -1341,6 +1341,9 @@ struct sk_buff **inet_gro_receive(struct sk_buff **head, struct sk_buff *skb)
 		goto out_unlock;
 
 	if (*(u8 *)iph != 0x45)
+		goto out_unlock;
+
+	if (ip_is_fragment(iph))
 		goto out_unlock;
 
 	if (unlikely(ip_fast_csum((u8 *)iph, 5)))

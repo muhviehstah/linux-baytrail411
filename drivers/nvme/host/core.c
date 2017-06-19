@@ -270,7 +270,7 @@ static inline int nvme_setup_discard(struct nvme_ns *ns, struct request *req,
 	memset(cmnd, 0, sizeof(*cmnd));
 	cmnd->dsm.opcode = nvme_cmd_dsm;
 	cmnd->dsm.nsid = cpu_to_le32(ns->ns_id);
-	cmnd->dsm.nr = segments - 1;
+	cmnd->dsm.nr = cpu_to_le32(segments - 1);
 	cmnd->dsm.attributes = cpu_to_le32(NVME_DSMGMT_AD);
 
 	req->special_vec.bv_page = virt_to_page(range);
@@ -1316,6 +1316,14 @@ static void nvme_configure_apst(struct nvme_ctrl *ctrl)
 				table->entries[state] = target;
 
 			/*
+			 * Don't allow transitions to the deepest state
+			 * if it's quirked off.
+			 */
+			if (state == ctrl->npss &&
+			    (ctrl->quirks & NVME_QUIRK_NO_DEEPEST_PS))
+				continue;
+
+			/*
 			 * Is this state a useful non-operational state for
 			 * higher-power states to autonomously transition to?
 			 */
@@ -1387,16 +1395,15 @@ struct nvme_core_quirk_entry {
 };
 
 static const struct nvme_core_quirk_entry core_quirks[] = {
-	/*
-	 * Seen on a Samsung "SM951 NVMe SAMSUNG 256GB": using APST causes
-	 * the controller to go out to lunch.  It dies when the watchdog
-	 * timer reads CSTS and gets 0xffffffff.
-	 */
 	{
-		.vid = 0x144d,
-		.fr = "BXW75D0Q",
+		/*
+		 * This Toshiba device seems to die using any APST states.  See:
+		 * https://bugs.launchpad.net/ubuntu/+source/linux/+bug/1678184/comments/11
+		 */
+		.vid = 0x1179,
+		.mn = "THNSF5256GPUK TOSHIBA",
 		.quirks = NVME_QUIRK_NO_APST,
-	},
+	}
 };
 
 /* match is null-terminated but idstr is space-padded. */
@@ -1999,7 +2006,6 @@ static void nvme_ns_remove(struct nvme_ns *ns)
 		if (ns->ndev)
 			nvme_nvm_unregister_sysfs(ns);
 		del_gendisk(ns->disk);
-		blk_mq_abort_requeue_list(ns->queue);
 		blk_cleanup_queue(ns->queue);
 	}
 
@@ -2337,8 +2343,16 @@ void nvme_kill_queues(struct nvme_ctrl *ctrl)
 			continue;
 		revalidate_disk(ns->disk);
 		blk_set_queue_dying(ns->queue);
-		blk_mq_abort_requeue_list(ns->queue);
-		blk_mq_start_stopped_hw_queues(ns->queue, true);
+
+		/*
+		 * Forcibly start all queues to avoid having stuck requests.
+		 * Note that we must ensure the queues are not stopped
+		 * when the final removal happens.
+		 */
+		blk_mq_start_hw_queues(ns->queue);
+
+		/* draining requests in requeue list */
+		blk_mq_kick_requeue_list(ns->queue);
 	}
 	mutex_unlock(&ctrl->namespaces_mutex);
 }

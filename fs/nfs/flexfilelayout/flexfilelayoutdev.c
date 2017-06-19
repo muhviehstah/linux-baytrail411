@@ -208,6 +208,10 @@ static bool ff_layout_mirror_valid(struct pnfs_layout_segment *lseg,
 		} else
 			goto outerr;
 	}
+
+	if (IS_ERR(mirror->mirror_ds))
+		goto outerr;
+
 	if (mirror->mirror_ds->ds == NULL) {
 		struct nfs4_deviceid_node *devid;
 		devid = &mirror->mirror_ds->id_node;
@@ -411,7 +415,7 @@ nfs4_ff_layout_prepare_ds(struct pnfs_layout_segment *lseg, u32 ds_idx,
 			     mirror->mirror_ds->ds_versions[0].minor_version);
 
 	/* connect success, check rsize/wsize limit */
-	if (ds->ds_clp) {
+	if (!status) {
 		max_payload =
 			nfs_block_size(rpc_max_payload(ds->ds_clp->cl_rpcclient),
 				       NULL);

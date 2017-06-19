@@ -4140,9 +4140,17 @@ skl_compute_wm(struct drm_atomic_state *state)
 	struct drm_crtc_state *cstate;
 	struct intel_atomic_state *intel_state = to_intel_atomic_state(state);
 	struct skl_wm_values *results = &intel_state->wm_results;
+	struct drm_device *dev = state->dev;
 	struct skl_pipe_wm *pipe_wm;
 	bool changed = false;
 	int ret, i;
+
+	/*
+	 * When we distrust bios wm we always need to recompute to set the
+	 * expected DDB allocations for each CRTC.
+	 */
+	if (to_i915(dev)->wm.distrust_bios_wm)
+		changed = true;
 
 	/*
 	 * If this transaction isn't actually touching any CRTC's, don't
@@ -4154,6 +4162,7 @@ skl_compute_wm(struct drm_atomic_state *state)
 	 */
 	for_each_crtc_in_state(state, crtc, cstate, i)
 		changed = true;
+
 	if (!changed)
 		return 0;
 
@@ -4896,13 +4905,6 @@ static void gen6_set_rps_thresholds(struct drm_i915_private *dev_priv, u8 val)
 	 */
 	if (IS_VALLEYVIEW(dev_priv))
 		goto skip_hw_write;
-
-	if (IS_VALLEYVIEW(dev_priv)) {
-		ei_up = 64000;
-		ei_down = 64000;
-		threshold_up = 90;
-		threshold_down = 70;
-	}
 
 	I915_WRITE(GEN6_RP_UP_EI,
 		   GT_INTERVAL_FROM_US(dev_priv, ei_up));

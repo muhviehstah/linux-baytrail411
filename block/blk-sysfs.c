@@ -816,10 +816,10 @@ static void blk_release_queue(struct kobject *kobj)
 
 	if (q->elevator) {
 		ioc_clear_queue(q);
-		elevator_exit(q->elevator);
+		elevator_exit(q, q->elevator);
 	}
 
-	blk_exit_rl(&q->root_rl);
+	blk_exit_rl(q, &q->root_rl);
 
 	if (q->queue_tags)
 		__blk_queue_free_tags(q);

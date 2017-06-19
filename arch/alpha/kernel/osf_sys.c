@@ -1199,8 +1199,10 @@ SYSCALL_DEFINE4(osf_wait4, pid_t, pid, int __user *, ustatus, int, options,
 	if (!access_ok(VERIFY_WRITE, ur, sizeof(*ur)))
 		return -EFAULT;
 
-	err = 0;
-	err |= put_user(status, ustatus);
+	err = put_user(status, ustatus);
+	if (ret < 0)
+		return err ? err : ret;
+
 	err |= __put_user(r.ru_utime.tv_sec, &ur->ru_utime.tv_sec);
 	err |= __put_user(r.ru_utime.tv_usec, &ur->ru_utime.tv_usec);
 	err |= __put_user(r.ru_stime.tv_sec, &ur->ru_stime.tv_sec);
@@ -1290,7 +1292,7 @@ SYSCALL_DEFINE1(old_adjtimex, struct timex32 __user *, txc_p)
 	/* copy relevant bits of struct timex. */
 	if (copy_from_user(&txc, txc_p, offsetof(struct timex32, time)) ||
 	    copy_from_user(&txc.tick, &txc_p->tick, sizeof(struct timex32) - 
-			   offsetof(struct timex32, time)))
+			   offsetof(struct timex32, tick)))
 	  return -EFAULT;
 
 	ret = do_adjtimex(&txc);	

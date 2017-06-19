@@ -25,6 +25,7 @@
 #include "dax.h"
 
 static dev_t dax_devt;
+DEFINE_STATIC_SRCU(dax_srcu);
 static struct class *dax_class;
 static DEFINE_IDA(dax_minor_ida);
 static int nr_dax = CONFIG_NR_DEV_DAX;
@@ -60,7 +61,7 @@ struct dax_region {
  * @region - parent region
  * @dev - device backing the character device
  * @cdev - core chardev data
- * @alive - !alive + rcu grace period == no new mappings can be established
+ * @alive - !alive + srcu grace period == no new mappings can be established
  * @id - child id in the region
  * @num_resources - number of physical address extents in this device
  * @res - array of physical address ranges
@@ -76,36 +77,27 @@ struct dax_dev {
 	struct resource res[0];
 };
 
+/*
+ * Rely on the fact that drvdata is set before the attributes are
+ * registered, and that the attributes are unregistered before drvdata
+ * is cleared to assume that drvdata is always valid.
+ */
 static ssize_t id_show(struct device *dev,
 		struct device_attribute *attr, char *buf)
 {
-	struct dax_region *dax_region;
-	ssize_t rc = -ENXIO;
+	struct dax_region *dax_region = dev_get_drvdata(dev);
 
-	device_lock(dev);
-	dax_region = dev_get_drvdata(dev);
-	if (dax_region)
-		rc = sprintf(buf, "%d\n", dax_region->id);
-	device_unlock(dev);
-
-	return rc;
+	return sprintf(buf, "%d\n", dax_region->id);
 }
 static DEVICE_ATTR_RO(id);
 
 static ssize_t region_size_show(struct device *dev,
 		struct device_attribute *attr, char *buf)
 {
-	struct dax_region *dax_region;
-	ssize_t rc = -ENXIO;
+	struct dax_region *dax_region = dev_get_drvdata(dev);
 
-	device_lock(dev);
-	dax_region = dev_get_drvdata(dev);
-	if (dax_region)
-		rc = sprintf(buf, "%llu\n", (unsigned long long)
-				resource_size(&dax_region->res));
-	device_unlock(dev);
-
-	return rc;
+	return sprintf(buf, "%llu\n", (unsigned long long)
+			resource_size(&dax_region->res));
 }
 static struct device_attribute dev_attr_region_size = __ATTR(size, 0444,
 		region_size_show, NULL);
@@ -113,16 +105,9 @@ static struct device_attribute dev_attr_region_size = __ATTR(size, 0444,
 static ssize_t align_show(struct device *dev,
 		struct device_attribute *attr, char *buf)
 {
-	struct dax_region *dax_region;
-	ssize_t rc = -ENXIO;
+	struct dax_region *dax_region = dev_get_drvdata(dev);
 
-	device_lock(dev);
-	dax_region = dev_get_drvdata(dev);
-	if (dax_region)
-		rc = sprintf(buf, "%u\n", dax_region->align);
-	device_unlock(dev);
-
-	return rc;
+	return sprintf(buf, "%u\n", dax_region->align);
 }
 static DEVICE_ATTR_RO(align);
 
@@ -569,7 +554,7 @@ static int __dax_dev_pud_fault(struct dax_dev *dax_dev, struct vm_fault *vmf)
 static int dax_dev_huge_fault(struct vm_fault *vmf,
 		enum page_entry_size pe_size)
 {
-	int rc;
+	int rc, id;
 	struct file *filp = vmf->vma->vm_file;
 	struct dax_dev *dax_dev = filp->private_data;
 
@@ -578,7 +563,7 @@ static int dax_dev_huge_fault(struct vm_fault *vmf,
 			? "write" : "read",
 			vmf->vma->vm_start, vmf->vma->vm_end);
 
-	rcu_read_lock();
+	id = srcu_read_lock(&dax_srcu);
 	switch (pe_size) {
 	case PE_SIZE_PTE:
 		rc = __dax_dev_pte_fault(dax_dev, vmf);
@@ -592,7 +577,7 @@ static int dax_dev_huge_fault(struct vm_fault *vmf,
 	default:
 		return VM_FAULT_FALLBACK;
 	}
-	rcu_read_unlock();
+	srcu_read_unlock(&dax_srcu, id);
 
 	return rc;
 }
@@ -702,24 +687,30 @@ static void dax_dev_release(struct device *dev)
 	kfree(dax_dev);
 }
 
-static void unregister_dax_dev(void *dev)
+static void kill_dax_dev(struct dax_dev *dax_dev)
 {
-	struct dax_dev *dax_dev = to_dax_dev(dev);
 	struct cdev *cdev = &dax_dev->cdev;
-
-	dev_dbg(dev, "%s\n", __func__);
 
 	/*
 	 * Note, rcu is not protecting the liveness of dax_dev, rcu is
 	 * ensuring that any fault handlers that might have seen
 	 * dax_dev->alive == true, have completed.  Any fault handlers
-	 * that start after synchronize_rcu() has started will abort
+	 * that start after synchronize_srcu() has started will abort
 	 * upon seeing dax_dev->alive == false.
 	 */
 	dax_dev->alive = false;
-	synchronize_rcu();
+	synchronize_srcu(&dax_srcu);
 	unmap_mapping_range(dax_dev->inode->i_mapping, 0, 0, 1);
 	cdev_del(cdev);
+}
+
+static void unregister_dax_dev(void *dev)
+{
+	struct dax_dev *dax_dev = to_dax_dev(dev);
+
+	dev_dbg(dev, "%s\n", __func__);
+
+	kill_dax_dev(dax_dev);
 	device_unregister(dev);
 }
 
@@ -796,6 +787,7 @@ struct dax_dev *devm_create_dax_dev(struct dax_region *dax_region,
 	dev_set_name(dev, "dax%d.%d", dax_region->id, dax_dev->id);
 	rc = device_add(dev);
 	if (rc) {
+		kill_dax_dev(dax_dev);
 		put_device(dev);
 		return ERR_PTR(rc);
 	}

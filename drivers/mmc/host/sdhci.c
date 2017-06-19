@@ -749,45 +749,6 @@ static void sdhci_set_timeout(struct sdhci_host *host, struct mmc_command *cmd)
 	}
 }
 
-static bool sdhci_pm_qos_use_dma_latency(struct sdhci_host *host)
-{
-	return host->dma_latency != PM_QOS_DEFAULT_VALUE;
-}
-
-static void sdhci_pm_qos_set_dma_latency(struct sdhci_host *host,
-					 struct mmc_request *mrq)
-{
-	if (sdhci_pm_qos_use_dma_latency(host) && mrq->data &&
-	    (host->flags & (SDHCI_USE_SDMA | SDHCI_USE_ADMA))) {
-		pm_qos_update_request(&host->pm_qos_req, host->dma_latency);
-		host->pm_qos_set = true;
-	}
-}
-
-static void sdhci_pm_qos_unset(struct sdhci_host *host)
-{
-	unsigned int delay;
-
-	if (host->pm_qos_set) {
-		host->pm_qos_set = false;
-		delay = host->consecutive_req ? host->lat_cancel_delay : 0;
-		pm_qos_cancel_request_lazy(&host->pm_qos_req, delay);
-	}
-}
-
-static void sdhci_pm_qos_add(struct sdhci_host *host)
-{
-	if (sdhci_pm_qos_use_dma_latency(host))
-		pm_qos_add_request(&host->pm_qos_req, PM_QOS_CPU_DMA_LATENCY,
-				   PM_QOS_DEFAULT_VALUE);
-}
-
-static void sdhci_pm_qos_remove(struct sdhci_host *host)
-{
-	if (pm_qos_request_active(&host->pm_qos_req))
-		pm_qos_remove_request(&host->pm_qos_req);
-}
-
 static void sdhci_prepare_data(struct sdhci_host *host, struct mmc_command *cmd)
 {
 	u8 ctrl;
@@ -1533,8 +1494,6 @@ static void sdhci_request(struct mmc_host *mmc, struct mmc_request *mrq)
 
 	host = mmc_priv(mmc);
 
-	sdhci_pm_qos_set_dma_latency(host, mrq);
-
 	/* Firstly check card presence */
 	present = mmc->ops->get_cd(mmc);
 
@@ -1871,6 +1830,9 @@ static void sdhci_enable_sdio_irq(struct mmc_host *mmc, int enable)
 	struct sdhci_host *host = mmc_priv(mmc);
 	unsigned long flags;
 
+	if (enable)
+		pm_runtime_get_noresume(host->mmc->parent);
+
 	spin_lock_irqsave(&host->lock, flags);
 	if (enable)
 		host->flags |= SDHCI_SDIO_IRQ_ENABLED;
@@ -1879,6 +1841,9 @@ static void sdhci_enable_sdio_irq(struct mmc_host *mmc, int enable)
 
 	sdhci_enable_sdio_irq_nolock(host, enable);
 	spin_unlock_irqrestore(&host->lock, flags);
+
+	if (!enable)
+		pm_runtime_put_noidle(host->mmc->parent);
 }
 
 static int sdhci_start_signal_voltage_switch(struct mmc_host *mmc,
